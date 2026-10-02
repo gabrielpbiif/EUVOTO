@@ -215,6 +215,126 @@
     if (navigator.canShare && navigator.canShare({ files: [teste] })) btnZap.hidden = false;
   } catch (e) {}
 
+  // ================= Vídeo com música (30 s) =================
+  const JINGLES = { lindbergh: 'audio/lindbergh.mp3', andre: 'audio/andre.mp3' };
+  const DUR = 30, VW = 720, VH = 1048, FPS = 30;
+  let jingle = 'lindbergh', videoBlob = null, videoExt = 'mp4', gravando = false;
+  const statusV = $('statusVideo');
+  document.querySelectorAll('.jingle').forEach(b => b.addEventListener('click', () => {
+    if (gravando) return;
+    jingle = b.dataset.j; document.querySelectorAll('.jingle').forEach(x => x.setAttribute('aria-pressed', x === b));
+  }));
+
+  const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  // câmera: lista de [tempo, centroX, centroY, zoom] em coordenadas do modelo
+  function roteiro(){
+    if (modo === 'card'){
+      const C = [550, 800], F = [549, 397];
+      return [[0, ...F, 2.1], [2.6, ...C, 1], [3.3, 550, 730, 1.1], [4.1, ...C, 1], [5, ...C, 1],
+              [9.5, 320, 1180, 1.55], [11.5, ...C, 1], [12.5, ...C, 1], [17, 780, 1180, 1.55], [19, ...C, 1],
+              [20, ...C, 1], [24, ...F, 1.55], [26, ...C, 1], [30, ...C, 1.05]];
+    }
+    const C = [549.5, 800], k = [[0, 267, 181, comFoto ? 2.3 : 1.6], [3, ...C, 1], [3.6, ...C, 1]];
+    let t = 3.6;
+    for (let i = 0; i < 6; i++){ const y = COL.linhaY(i) + 103; k.push([t + .9, 550, y, 1.22], [t + 3.2, 550, y, 1.28]); t += 3.2; }
+    k.push([t + 1.2, ...C, 1], [30, ...C, 1.04]);
+    return k;
+  }
+  function camera(t, k){
+    if (t <= k[0][0]) return k[0].slice(1);
+    for (let i = 1; i < k.length; i++) if (t <= k[i][0]){
+      const [t0, ...a] = k[i - 1], [t1, ...b] = k[i], p = ease((t - t0) / (t1 - t0));
+      return a.map((v, j) => v + (b[j] - v) * p);
+    }
+    return k[k.length - 1].slice(1);
+  }
+  function quadroVideo(g, src, uW, uH, t, k){
+    let [cx, cy, z] = camera(t, k);
+    const vw = uW / z, vh = uH / z;
+    cx = Math.max(vw / 2, Math.min(uW - vw / 2, cx)); cy = Math.max(vh / 2, Math.min(uH - vh / 2, cy));
+    const s = src.width / uW;
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, VW, VH);
+    g.drawImage(src, (cx - vw / 2) * s, (cy - vh / 2) * s, vw * s, vh * s, 0, 0, VW, VH);
+    if (t < .5){ g.fillStyle = `rgba(255,255,255,${1 - t / .5})`; g.fillRect(0, 0, VW, VH); }   // entrada suave
+  }
+  function tipoVideo(){
+    const op = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return op.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+  }
+
+  const btnGerar = $('gerarVideo'), barra = $('barra');
+  btnGerar.addEventListener('click', async () => {
+    if (gravando || !pronto()) return;
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream){ statusV.textContent = 'Este navegador não grava vídeo. Abra o site no Chrome (Android) ou Safari (iPhone) atualizado, ou use "Baixar imagem".'; return; }
+    gravando = true; btnGerar.disabled = true; $('txtVideo').textContent = 'Preparando…';
+    $('videoPronto').hidden = true; $('progresso').hidden = false; barra.style.width = '0%';
+    let ac;
+    try {
+      // quadro estático em alta (o mesmo da imagem) e áudio do jingle
+      desenhar();
+      const src = document.createElement('canvas'); src.width = tela.width; src.height = tela.height; src.getContext('2d').drawImage(tela, 0, 0);
+      const [uW, uH] = modo === 'card' ? [CARD.W, CARD.H] : [COL.W, COL.H], k = roteiro();
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = await ac.decodeAudioData(await (await fetch(JINGLES[jingle])).arrayBuffer());
+      const vc = document.createElement('canvas'); vc.width = VW; vc.height = VH;
+      const g = vc.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      quadroVideo(g, src, uW, uH, 0, k);
+      const destino = ac.createMediaStreamDestination(), fonte = ac.createBufferSource();
+      fonte.buffer = buf; fonte.connect(destino);
+      const stream = new MediaStream([...vc.captureStream(FPS).getVideoTracks(), ...destino.stream.getAudioTracks()]);
+      const tipo = tipoVideo(); videoExt = /mp4/.test(tipo) ? 'mp4' : 'webm';
+      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 } : undefined);
+      const partes = []; rec.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
+      const fim = new Promise(r => { rec.onstop = r; });
+      $('txtVideo').textContent = 'Gravando… 0%';
+      await ac.resume(); rec.start(500);
+      const t0 = ac.currentTime; fonte.start();
+      await new Promise(res => {
+        const passo = () => {
+          const t = ac.currentTime - t0;
+          quadroVideo(g, src, uW, uH, Math.min(t, DUR), k);
+          const p = Math.min(100, Math.round(t / DUR * 100)); barra.style.width = p + '%'; $('txtVideo').textContent = `Gravando… ${p}%`;
+          if (t >= DUR) return res();
+          requestAnimationFrame(passo);
+        };
+        requestAnimationFrame(passo);
+      });
+      rec.stop(); await fim; fonte.stop();
+      videoBlob = new Blob(partes, { type: (rec.mimeType || tipo || 'video/webm').split(';')[0] });
+      $('videoPronto').hidden = false;
+      statusV.textContent = videoExt === 'mp4' ? 'Vídeo pronto! Baixe ou mande direto no WhatsApp.'
+        : 'Vídeo pronto (formato WebM). Se o WhatsApp não aceitar, use o Chrome atualizado ou mande a imagem.';
+    } catch (err){
+      statusV.textContent = 'Não consegui gravar o vídeo neste aparelho. Tente de novo ou use "Baixar imagem".';
+    } finally {
+      gravando = false; btnGerar.disabled = false; $('txtVideo').textContent = 'Gerar vídeo de novo';
+      if (ac) ac.close().catch(() => {});
+    }
+  });
+
+  const nomeVideo = () => (modo === 'card' ? 'eu-voto' : 'colinha') + '-' + jingle + '.' + videoExt;
+  $('baixarVideo').addEventListener('click', () => {
+    if (!videoBlob) return;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(videoBlob); a.download = nomeVideo();
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    statusV.textContent = 'Vídeo salvo! No WhatsApp, anexe pela Galeria.';
+  });
+  const btnZapV = $('compartilharVideo');
+  btnZapV.addEventListener('click', async () => {
+    if (!videoBlob) return;
+    const arq = new File([videoBlob], nomeVideo(), { type: videoBlob.type });
+    try { await navigator.share({ files: [arq] }); statusV.textContent = 'Vídeo enviado!'; }
+    catch (err){ if (!err || err.name !== 'AbortError') statusV.textContent = 'Não abriu o compartilhamento. Use "Baixar vídeo" e anexe no WhatsApp.'; }
+  });
+  try {
+    const tv = new File([new Blob(['x'], { type: 'video/mp4' })], 't.mp4', { type: 'video/mp4' });
+    if (navigator.canShare && navigator.canShare({ files: [tv] })) btnZapV.hidden = false;
+  } catch (e) {}
+  // trocar aba/foto/cor invalida o vídeo já gerado
+  const invalidar = () => { if (!gravando){ videoBlob = null; $('videoPronto').hidden = true; } };
+  document.querySelectorAll('.aba,.cor,#colComFoto,#colSemFoto,.jingle').forEach(b => b.addEventListener('click', invalidar));
+  inp.addEventListener('change', invalidar);
+
   // ================= Mensagem pronta para mandar =================
   const msgEl = $('mensagem'), btnCopiar = $('copiarMsg');
   btnCopiar.addEventListener('click', async () => {

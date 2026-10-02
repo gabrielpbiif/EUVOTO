@@ -95,6 +95,24 @@
         </button>
       </div>
       <p class="status" id="status">Coloque sua foto e escolha a cor. O card muda na hora.</p>
+      <div class="video-box">
+        <h3>Vídeo com música · 30 segundos</h3>
+        <p class="sub">Escolha o jingle:</p>
+        <div class="jingles" role="group" aria-label="Jingle do vídeo">
+          <button type="button" class="op jingle" data-j="lindbergh" aria-pressed="true"><span class="marca"></span><span class="t">Jingle Lindbergh 1300</span></button>
+          <button type="button" class="op jingle" data-j="andre" aria-pressed="false"><span class="marca"></span><span class="t">Jingle André 13567</span></button>
+        </div>
+        <button class="btn btn-video" id="gerarVideo" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>
+          <span id="txtVideo">Gerar vídeo</span>
+        </button>
+        <div class="progresso" id="progresso" hidden><i id="barra"></i></div>
+        <div class="pilha" id="videoPronto" hidden>
+          <button class="btn btn-zap" id="compartilharVideo" type="button" hidden>Compartilhar vídeo no WhatsApp</button>
+          <button class="btn btn-baixar" id="baixarVideo" type="button">Baixar vídeo</button>
+        </div>
+        <p class="status" id="statusVideo">O vídeo é gravado no seu celular em tempo real (30 segundos). Deixe a tela aberta até terminar.</p>
+      </div>
     </div>
 
     <div class="card passo convite">

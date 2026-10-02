@@ -113,3 +113,12 @@ footer{text-align:center;color:var(--suave);font-size:12px;padding:0 16px 32px;l
 .aviso{background:#fff8d6;border-left:5px solid var(--amarelo);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.45;color:#5a4a00}
 .aviso b{color:#3d3200}
 blockquote{white-space:pre-line;background:var(--fundo);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5;margin-bottom:10px;user-select:text}
+
+.video-box{margin-top:18px;padding-top:16px;border-top:2px dashed var(--linha)}
+.video-box h3{font-family:var(--display);font-weight:400;font-size:20px;text-transform:uppercase;color:var(--azul)}
+.jingles{display:grid;gap:8px;margin-bottom:12px}
+.btn-video{background:var(--azul);color:var(--branco)}
+.btn-video[disabled]{opacity:.6;cursor:wait}
+.progresso{margin-top:12px;height:12px;border-radius:99px;background:var(--fundo);overflow:hidden}
+.progresso i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ceu),var(--azul));transition:width .25s linear}
+#videoPronto{margin-top:12px}
