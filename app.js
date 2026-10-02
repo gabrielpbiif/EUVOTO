@@ -232,13 +232,14 @@
   function roteiro(){
     if (modo === 'card'){
       const C = [550, 800], F = [549, 397];
-      return [[0, ...F, 2.1], [2.6, ...C, 1], [3.3, 550, 730, 1.1], [4.1, ...C, 1], [5, ...C, 1],
+      // começa com a arte inteira (é o quadro que o WhatsApp usa de capa), depois zoom na foto
+      return [[0, ...C, 1], [1.2, ...C, 1], [3, ...F, 1.9], [3.8, ...F, 1.95], [5.2, ...C, 1], [5.8, 550, 730, 1.1], [6.5, ...C, 1], [7, ...C, 1],
               [9.5, 320, 1180, 1.55], [11.5, ...C, 1], [12.5, ...C, 1], [17, 780, 1180, 1.55], [19, ...C, 1],
               [20, ...C, 1], [24, ...F, 1.55], [26, ...C, 1], [30, ...C, 1.05]];
     }
-    const C = [549.5, 800], k = [[0, 267, 181, comFoto ? 2.3 : 1.6], [3, ...C, 1], [3.6, ...C, 1]];
-    let t = 3.6;
-    for (let i = 0; i < 6; i++){ const y = COL.linhaY(i) + 103; k.push([t + .9, 550, y, 1.22], [t + 3.2, 550, y, 1.28]); t += 3.2; }
+    const C = [549.5, 800], k = [[0, ...C, 1], [1, ...C, 1], [2.4, 267, 181, comFoto ? 2.3 : 1.6], [3, 267, 181, comFoto ? 2.35 : 1.62], [4.2, ...C, 1]];
+    let t = 4.2;
+    for (let i = 0; i < 6; i++){ const y = COL.linhaY(i) + 103; k.push([t + .9, 550, y, 1.22], [t + 3.1, 550, y, 1.28]); t += 3.1; }
     k.push([t + 1.2, ...C, 1], [30, ...C, 1.04]);
     return k;
   }
@@ -257,7 +258,6 @@
     const s = src.width / uW;
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, VW, VH);
     g.drawImage(src, (cx - vw / 2) * s, (cy - vh / 2) * s, vw * s, vh * s, 0, 0, VW, VH);
-    if (t < .5){ g.fillStyle = `rgba(255,255,255,${1 - t / .5})`; g.fillRect(0, 0, VW, VH); }   // entrada suave
   }
   function tipoVideo(){
     const op = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -299,7 +299,7 @@
       const partes = []; rec.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
       const fim = new Promise(r => { rec.onstop = r; });
       $('txtVideo').textContent = 'Gravando… 0%';
-      await ac.resume(); rec.start(500);
+      await ac.resume(); rec.start(500); empurra();
       const t0 = ac.currentTime; fonte.start();
       let ultimo = -1;
       await new Promise(res => {
