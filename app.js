@@ -339,7 +339,9 @@
       desenhar();
       const src = document.createElement('canvas'); src.width = tela.width; src.height = tela.height; src.getContext('2d').drawImage(tela, 0, 0);
       const [uW, uH] = modo === 'card' ? [CARD.W, CARD.H] : [COL.W, COL.H], k = roteiro();
-      const codec = await codecRapido();
+      // MediaRecorder em MP4 (formato que já funcionou no WhatsApp) tem preferência; WebCodecs só se o navegador não gravar MP4
+      const mrH264 = window.MediaRecorder && ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a'].some(t => MediaRecorder.isTypeSupported(t));
+      const codec = mrH264 ? null : await codecRapido();
       if (codec){
         try {
           await videoRapido(codec, src, uW, uH, k);
@@ -358,11 +360,9 @@
       saiu = false;
       const destino = ac.createMediaStreamDestination(), fonte = ac.createBufferSource();
       fonte.buffer = buf; fonte.connect(destino);
-      // quadro a quadro: cada desenho vira um quadro do vídeo (requestFrame), senão captura a 30 fps
       // guarda a referência do stream: se o navegador recolher o stream da memória, o vídeo congela (era o travamento no zoom)
-      capt = vc.captureStream(0); let vtrack = capt.getVideoTracks()[0];
-      if (!vtrack || typeof vtrack.requestFrame !== 'function'){ if (vtrack) vtrack.stop(); capt = vc.captureStream(FPS); vtrack = capt.getVideoTracks()[0]; }
-      const empurra = () => { if (vtrack.requestFrame) vtrack.requestFrame(); };
+      capt = vc.captureStream(FPS); const vtrack = capt.getVideoTracks()[0];
+      const empurra = () => {};
       const stream = new MediaStream([vtrack, ...destino.stream.getAudioTracks()]);
       const tipo = tipoVideo(); videoExt = /mp4/.test(tipo) ? 'mp4' : 'webm';
       streamAtual = stream;
