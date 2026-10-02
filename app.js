@@ -264,10 +264,73 @@
     return op.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
   }
 
+  // ---- caminho principal: monta o MP4 quadro a quadro (WebCodecs) ----
+  // Gera MP4 padrão (H.264 + AAC, índice no começo): o WhatsApp manda como vídeo com capa. Não depende de tempo real.
+  const JINGLES_AAC = { lindbergh: 'audio/lindbergh.aac', andre: 'audio/andre.aac' };
+  const TAXAS = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  const lerBytes = async url => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  function quadrosAdts(u){
+    const fr = []; let i = 0, cfg = null;
+    while (i + 7 <= u.length){
+      if (u[i] !== 0xFF || (u[i + 1] & 0xF0) !== 0xF0){ i++; continue; }
+      const h = (u[i + 1] & 1) ? 7 : 9, len = ((u[i + 3] & 3) << 11) | (u[i + 4] << 3) | (u[i + 5] >> 5);
+      if (!cfg) cfg = { obj: ((u[i + 2] >> 6) & 3) + 1, sri: (u[i + 2] >> 2) & 15, ch: ((u[i + 2] & 1) << 2) | (u[i + 3] >> 6) };
+      if (len < h || i + len > u.length) break;
+      fr.push(u.subarray(i + h, i + len)); i += len;
+    }
+    return { fr, cfg };
+  }
+  async function codecRapido(){
+    if (!window.VideoEncoder || !window.VideoFrame || !window.Mp4Muxer) return null;
+    for (const c of ['avc1.42001f', 'avc1.4d001f', 'avc1.4d0028', 'avc1.640028']){
+      try { if ((await VideoEncoder.isConfigSupported({ codec: c, width: VW, height: VH, bitrate: 2_000_000, framerate: FPS })).supported) return c; } catch (e) {}
+    }
+    return null;
+  }
+  const pausa = ms => new Promise(r => setTimeout(r, ms));
+  async function videoRapido(codec, src, uW, uH, k){
+    const { fr, cfg } = quadrosAdts(await lerBytes(JINGLES_AAC[jingle]));
+    if (!cfg || !fr.length) throw new Error('aac');
+    const sr = TAXAS[cfg.sri];
+    const vc = document.createElement('canvas'); vc.width = VW; vc.height = VH;
+    const g = vc.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    vc.className = 'gravacao'; tela.hidden = true; tela.after(vc); vcAtual = vc;
+    const pedacos = []; let erro = null;
+    const ve = new VideoEncoder({ output: (c, m) => pedacos.push([c, m]), error: e => { erro = e; } });
+    ve.configure({ codec, width: VW, height: VH, bitrate: 2_000_000, framerate: FPS, avc: { format: 'avc' } });
+    const N = Math.round(DUR * FPS), dq = Math.round(1e6 / FPS);
+    for (let i = 0; i < N; i++){
+      if (erro) throw erro;
+      quadroVideo(g, src, uW, uH, i / FPS, k);
+      const f = new VideoFrame(vc, { timestamp: i * dq, duration: dq });
+      ve.encode(f, { keyFrame: i % (FPS * 2) === 0 }); f.close();
+      while (ve.encodeQueueSize > 6) await pausa(4);
+      if (i % 5 === 0){ const p = Math.round(i / N * 100); barra.style.width = p + '%'; $('txtVideo').textContent = `Montando vídeo… ${p}%`; await pausa(0); }
+    }
+    await ve.flush(); ve.close();
+    if (erro) throw erro;
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(), fastStart: 'in-memory', firstTimestampBehavior: 'offset',
+      video: { codec: 'avc', width: VW, height: VH, frameRate: FPS },
+      audio: { codec: 'aac', numberOfChannels: cfg.ch, sampleRate: sr }
+    });
+    // áudio já vem codificado em AAC (1024 amostras por quadro); intercala com o vídeo por tempo
+    const asc = new Uint8Array([(cfg.obj << 3) | (cfg.sri >> 1), ((cfg.sri & 1) << 7) | (cfg.ch << 3)]);
+    const da = 1024 / sr * 1e6, nA = Math.min(fr.length, Math.floor(DUR * 1e6 / da));
+    let a = 0;
+    const poeAudio = ate => { while (a < nA && a * da <= ate){
+      muxer.addAudioChunkRaw(fr[a], 'key', Math.round(a * da), Math.round(da), a === 0 ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: cfg.ch, description: asc } } : undefined); a++; } };
+    for (const [c, m] of pedacos){ poeAudio(c.timestamp); muxer.addVideoChunk(c, m); }
+    poeAudio(Infinity);
+    muxer.finalize();
+    videoBlob = new Blob([muxer.target.buffer], { type: 'video/mp4' }); videoExt = 'mp4';
+    barra.style.width = '100%';
+  }
+
   const btnGerar = $('gerarVideo'), barra = $('barra');
   btnGerar.addEventListener('click', async () => {
     if (gravando || !pronto()) return;
-    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream){ statusV.textContent = 'Este navegador não grava vídeo. Abra o site no Chrome (Android) ou Safari (iPhone) atualizado, ou use "Baixar imagem".'; return; }
+    if (!window.VideoEncoder && (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream)){ statusV.textContent = 'Este navegador não grava vídeo. Abra o site no Chrome (Android) ou Safari (iPhone) atualizado, ou use "Baixar imagem".'; return; }
     gravando = true; btnGerar.disabled = true; $('txtVideo').textContent = 'Preparando…';
     $('videoPronto').hidden = true; $('progresso').hidden = false; barra.style.width = '0%';
     let ac;
@@ -276,6 +339,14 @@
       desenhar();
       const src = document.createElement('canvas'); src.width = tela.width; src.height = tela.height; src.getContext('2d').drawImage(tela, 0, 0);
       const [uW, uH] = modo === 'card' ? [CARD.W, CARD.H] : [COL.W, COL.H], k = roteiro();
+      const codec = await codecRapido();
+      if (codec){
+        try {
+          await videoRapido(codec, src, uW, uH, k);
+          $('videoPronto').hidden = false; statusV.textContent = 'Vídeo pronto! Baixe ou mande direto no WhatsApp.';
+          return;
+        } catch (e) { if (vcAtual){ vcAtual.remove(); vcAtual = null; } tela.hidden = false; }   // se falhar, grava em tempo real
+      }
       ac = new (window.AudioContext || window.webkitAudioContext)();
       const buf = await ac.decodeAudioData(await (await fetch(JINGLES[jingle])).arrayBuffer());
       const vc = document.createElement('canvas'); vc.width = VW; vc.height = VH;
