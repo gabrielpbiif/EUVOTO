@@ -218,7 +218,9 @@
   // ================= Vídeo com música (30 s) =================
   const JINGLES = { lindbergh: 'audio/lindbergh.mp3', andre: 'audio/andre.mp3' };
   const DUR = 30, VW = 720, VH = 1048, FPS = 30;
-  let jingle = 'lindbergh', videoBlob = null, videoExt = 'mp4', gravando = false;
+  let jingle = 'lindbergh', videoBlob = null, videoExt = 'mp4', gravando = false, saiu = false, trava = null, vcAtual = null, capt = null, recAtual = null, streamAtual = null;
+  // se a pessoa sair da tela no meio, o celular congela o desenho: cancela e avisa
+  document.addEventListener('visibilitychange', () => { if (gravando && document.hidden) saiu = true; });
   const statusV = $('statusVideo');
   document.querySelectorAll('.jingle').forEach(b => b.addEventListener('click', () => {
     if (gravando) return;
@@ -279,20 +281,32 @@
       const vc = document.createElement('canvas'); vc.width = VW; vc.height = VH;
       const g = vc.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       quadroVideo(g, src, uW, uH, 0, k);
+      // o canvas da gravação fica visível na prévia (celular não para de gerar quadros de canvas fora da tela)
+      vc.className = 'gravacao'; tela.hidden = true; tela.after(vc); vcAtual = vc;
+      try { if (navigator.wakeLock) trava = await navigator.wakeLock.request('screen'); } catch (e) {}
+      saiu = false;
       const destino = ac.createMediaStreamDestination(), fonte = ac.createBufferSource();
       fonte.buffer = buf; fonte.connect(destino);
-      const stream = new MediaStream([...vc.captureStream(FPS).getVideoTracks(), ...destino.stream.getAudioTracks()]);
+      // quadro a quadro: cada desenho vira um quadro do vídeo (requestFrame), senão captura a 30 fps
+      // guarda a referência do stream: se o navegador recolher o stream da memória, o vídeo congela (era o travamento no zoom)
+      capt = vc.captureStream(0); let vtrack = capt.getVideoTracks()[0];
+      if (!vtrack || typeof vtrack.requestFrame !== 'function'){ if (vtrack) vtrack.stop(); capt = vc.captureStream(FPS); vtrack = capt.getVideoTracks()[0]; }
+      const empurra = () => { if (vtrack.requestFrame) vtrack.requestFrame(); };
+      const stream = new MediaStream([vtrack, ...destino.stream.getAudioTracks()]);
       const tipo = tipoVideo(); videoExt = /mp4/.test(tipo) ? 'mp4' : 'webm';
-      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 } : undefined);
+      streamAtual = stream;
+      const rec = recAtual = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 } : undefined);
       const partes = []; rec.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
       const fim = new Promise(r => { rec.onstop = r; });
       $('txtVideo').textContent = 'Gravando… 0%';
       await ac.resume(); rec.start(500);
       const t0 = ac.currentTime; fonte.start();
+      let ultimo = -1;
       await new Promise(res => {
         const passo = () => {
           const t = ac.currentTime - t0;
-          quadroVideo(g, src, uW, uH, Math.min(t, DUR), k);
+          if (saiu) return res();
+          if (t - ultimo >= 1 / FPS - .008 || t >= DUR){ ultimo = t; quadroVideo(g, src, uW, uH, Math.min(t, DUR), k); empurra(); }   // 30 quadros/s mesmo em tela de 120 Hz
           const p = Math.min(100, Math.round(t / DUR * 100)); barra.style.width = p + '%'; $('txtVideo').textContent = `Gravando… ${p}%`;
           if (t >= DUR) return res();
           requestAnimationFrame(passo);
@@ -300,13 +314,18 @@
         requestAnimationFrame(passo);
       });
       rec.stop(); await fim; fonte.stop();
+      if (saiu) throw new Error('saiu');
       videoBlob = new Blob(partes, { type: (rec.mimeType || tipo || 'video/webm').split(';')[0] });
       $('videoPronto').hidden = false;
       statusV.textContent = videoExt === 'mp4' ? 'Vídeo pronto! Baixe ou mande direto no WhatsApp.'
         : 'Vídeo pronto (formato WebM). Se o WhatsApp não aceitar, use o Chrome atualizado ou mande a imagem.';
     } catch (err){
-      statusV.textContent = 'Não consegui gravar o vídeo neste aparelho. Tente de novo ou use "Baixar imagem".';
+      statusV.textContent = saiu ? 'A gravação parou porque a tela saiu do site. Toque em gerar de novo e deixe a tela aberta até 100%.'
+        : 'Não consegui gravar o vídeo neste aparelho. Tente de novo ou use "Baixar imagem".';
     } finally {
+      if (vcAtual){ vcAtual.remove(); vcAtual = null; } tela.hidden = false;
+      if (streamAtual) streamAtual.getTracks().forEach(tr => tr.stop()); capt = recAtual = streamAtual = null;
+      if (trava){ trava.release().catch(() => {}); trava = null; }
       gravando = false; btnGerar.disabled = false; $('txtVideo').textContent = 'Gerar vídeo de novo';
       if (ac) ac.close().catch(() => {});
     }

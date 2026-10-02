@@ -28,6 +28,7 @@ main{max-width:1000px;margin:-40px auto 0;padding:0 16px 40px;display:grid;gap:2
 .card{background:var(--branco);border-radius:18px;box-shadow:0 10px 30px rgba(14,26,74,.12);padding:16px;min-width:0}
 .preview{position:relative}
 .preview canvas{display:block;width:100%;height:auto;border-radius:10px;touch-action:none;background:#dfe8f7}
+.preview canvas.gravacao{pointer-events:none}
 .preview.tem-foto canvas{cursor:grab}
 .dica{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(10,47,158,.92);color:var(--branco);
   font-size:12px;font-weight:600;padding:6px 10px;border-radius:99px;pointer-events:none;white-space:nowrap}
